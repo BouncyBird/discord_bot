@@ -9,6 +9,7 @@ import asyncio
 import youtube_dl
 from discord_components import DiscordComponents, ComponentsBot, Button, Select, SelectOption
 from bs4 import BeautifulSoup
+import random
 
 TOKEN = keyring.get_password("discord_bot", "token")  # Put token here
 # Put guild name here. Doesn't really matter
@@ -186,9 +187,10 @@ async def joke(ctx):
     await ctx.send(embed=embed)
 
 polls = []
+results = []
 
 
-@bot.command(help="Experimental; NOT RELIABLE. Create a poll.")
+@bot.command(help="Create a poll.", usage="<poll_title>|$|<question>|$|<options_seperated_by_|$|>")
 async def poll(ctx, *, args):
     arglist = args.split("|$|")
     if len(arglist) < 4:
@@ -202,12 +204,12 @@ async def poll(ctx, *, args):
             await ctx.send("A poll with the same title already exists.")
             return
     polls.append(
-        {"title": arglist[0], "desc": arglist[1], "options": dict.fromkeys(arglist[2:], 0), "author": ctx.author.id, "aname": ctx.author.name, "avatar": ctx.author.avatar_url, "mid": ctx.message.id, "voted": []})
+        {"title": arglist[0], "desc": arglist[1], "options": dict.fromkeys(arglist[2:], []), "author": ctx.author.id, "aname": ctx.author.name, "avatar": ctx.author.avatar_url, "mid": ctx.message.id, "guild": ctx.message.guild.id, "voted": []})
     pidx = len(polls) - 1
     orig = polls[pidx]
     odesc = ""
     for idx, i in enumerate(arglist[2:]):
-        odesc += f"{idx+1}. {i}({polls[pidx]['options'][i]} vote(s))\n"
+        odesc += f"{idx+1}. {i}({len(polls[pidx]['options'][i])} vote(s))\n"
     embed.add_field(name="Options",
                     value=odesc, inline=False)
     msg = await ctx.send(
@@ -223,7 +225,7 @@ async def poll(ctx, *, args):
             break
         interaction = await bot.wait_for("button_click", check=lambda x: x.custom_id == "vote")
         if interaction.user.id in polls[pidx]["voted"]:
-            await ctx.send("You have already voted.")
+            await interaction.send("You have already voted.")
         else:
             polls[pidx]["voted"].append(interaction.user.id)
             await interaction.send(content="Vote", components=[
@@ -235,44 +237,74 @@ async def poll(ctx, *, args):
                         for idx, i in enumerate(arglist[2:])],
                 )
             ])
-
-        interaction2 = await bot.wait_for("select_option")
-        polls[pidx]['options'][interaction2.values[0]] += 1
-        newembed = discord.Embed(
-            title=arglist[0], description=arglist[1], color=0x00ff00)
-        newembed.set_author(name=ctx.author.name,
-                            icon_url=ctx.author.avatar_url)
-        odesc = ""
-        for idx, i in enumerate(arglist[2:]):
-            odesc += f"{idx+1}. {i}({polls[pidx]['options'][i]} vote(s))\n"
-        newembed.add_field(name="Options",
-                           value=odesc, inline=False)
-        await msg.edit(embed=newembed)
-        await interaction2.send(content=f"{interaction2.values[0]} voted for!")
+            interaction2 = await bot.wait_for("select_option")
+            polls[pidx]['options'][interaction2.values[0]].append(
+                interaction2.user.id)
+            newembed = discord.Embed(
+                title=arglist[0], description=arglist[1], color=0x00ff00)
+            newembed.set_author(name=ctx.author.name,
+                                icon_url=ctx.author.avatar_url)
+            odesc = ""
+            for idx, i in enumerate(arglist[2:]):
+                odesc += f"{idx+1}. {i}({len(polls[pidx]['options'][i])} vote(s))\n"
+            newembed.add_field(name="Options",
+                               value=odesc, inline=False)
+            await msg.edit(embed=newembed)
+            await interaction2.send(content=f"{interaction2.values[0]} voted for!")
 
 
 @bot.command(help="End a poll.")
-async def endpoll(ctx, *, args):
+async def endpoll(ctx, *, poll_title):
     if len(polls) == 0:
         await ctx.send("There are no active polls.")
         return
     for i in polls:
-        if i["title"] == args:
-            polls.remove(i)
-            newembed = discord.Embed(
-                title=i["title"], description=i["desc"], color=0x00ff00)
-            newembed.set_author(name=i["aname"],
-                                icon_url=i["avatar"])
-            odesc = ""
-            for idx, ii in enumerate(i["options"]):
-                odesc += f"{idx+1}. {ii}({i['options'][ii]} vote(s))\n"
-            newembed.add_field(name="Options",
-                               value=odesc, inline=False)
-            newembed.set_footer(text="This poll has ended.")
-            await i["msg"].edit(embed=newembed, components=[])
-            return
+        if i["title"] == poll_title:
+            if ((i["author"] == ctx.author.id) and (ctx.message.guild.id == i["guild"])) or ((ctx.message.author.guild_permissions.administrator) and (ctx.message.guild.id == i["guild"])):
+                rid = random_id = ' '.join(
+                    [str(random.randint(0, 999)).zfill(3) for _ in range(2)])
+                while rid in [i["rid"] for i in results]:
+                    rid = random_id = ' '.join(
+                        [str(random.randint(0, 999)).zfill(3) for _ in range(2)])
+                results.append(
+                    {"rid": int(rid.replace(" ", "")), "options": i["options"]})
+                polls.remove(i)
+                newembed = discord.Embed(
+                    title=i["title"], description=i["desc"], color=0x00ff00)
+                newembed.set_author(name=i["aname"],
+                                    icon_url=i["avatar"])
+                odesc = ""
+                for idx, ii in enumerate(i["options"]):
+                    odesc += f"{idx+1}. {ii}({len(i['options'][ii])} vote(s))\n"
+                newembed.add_field(name="Options",
+                                   value=odesc, inline=False)
+                newembed.add_field(
+                    name="Results ID", value=f"{rid}\nView results using the !results command")
+                newembed.set_footer(text="This poll has ended.")
+                await i["msg"].edit(embed=newembed, components=[])
+                return
+            else:
+                await ctx.send("You must be the author of this poll or be an admin. Or that poll may exist in a different guild.")
+                return
     await ctx.send("There is no poll with that title.")
 
+
+@bot.command(help="View the results of a poll.")
+async def results(ctx, rid):
+    if len(results) == 0:
+        await ctx.send("There are no poll results.")
+        return
+    for i in results:
+        if i["rid"] == int(rid):
+            embed = discord.Embed(
+                title=f"Results for poll {rid}", description="", color=0x00ff00)
+            embed.set_author(name=ctx.author.name,
+                             icon_url=ctx.author.avatar_url)
+            for key, value in i["options"].items():
+                embed.add_field(name=key, value=f"{len(value)} vote(s)\n{[f"{bot.fetch_user(i).name}\n" for i in value]}", inline=False)
+            await ctx.send(embed=embed)
+            return
+    await ctx.send("There is no poll results with that ID.")
 
 """@bot.command()
 async def button(ctx):
@@ -305,13 +337,13 @@ async def select(ctx):
     await interaction.send(content=f"{interaction.values[0]} selected!")"""
 
 
-@bot.event
+@ bot.event
 async def on_member_join(member):
     channel = bot.get_channel(739131858442378752)
     await channel.send(f"Welcome {member.mention} to the server!")
 
 
-@bot.command(help="Get a random meme. All memes are non-explicit and appropriate for all ages.")
+@ bot.command(help="Get a random meme. All memes are non-explicit and appropriate for all ages.")
 async def meme(ctx):
     meme = requests.get(
         'https://meme-api.herokuapp.com/gimme').json()
@@ -324,13 +356,13 @@ async def meme(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(help="Send a text-based peace emoji(two fingers held up)")
+@ bot.command(help="Send a text-based peace emoji(two fingers held up)")
 async def peace(ctx):
     await ctx.send(embed=discord.Embed(description="""
-    
+
 ☆┌─┐　─┐☆
 　│▒│ /▒/
-　│▒│/▒/ ¡ 
+　│▒│/▒/ ¡
 　│▒ /▒/─┬─┐
 　│▒│▒|▒│▒│
 ┌┴─┴─┐-┘─
@@ -340,18 +372,18 @@ async def peace(ctx):
     """))
 
 
-@bot.command(help='Send a text-based "fight me" emoji')
+@ bot.command(help='Send a text-based "fight me" emoji')
 async def fightme(ctx):
     await ctx.send(embed=discord.Embed(description="""
-    
+
 (ง'̀-'́)ง
     """))
 
 
-@bot.command(help='Send a text-based shrug emoji')
+@ bot.command(help='Send a text-based shrug emoji')
 async def shrug(ctx):
     await ctx.send(embed=discord.Embed(description="""
-    
+
 ¯\_(ツ)_/¯
     """))
 
