@@ -359,4 +359,13 @@ async def shrug(ctx):
 ¯\_(ツ)_/¯
     """))
 
+
+@bot.command(help='Insult Someone')
+async def insult(ctx, *, mentions):
+    for i in ctx.message.mentions:
+        r = requests.get(
+            f"https://insult.mattbas.org/api/insult?who=veryuncommonname")
+        await ctx.send(f"{(r.text).replace('veryuncommonname', i.mention)}")
+
+
 bot.run(TOKEN)
