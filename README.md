@@ -6,3 +6,4 @@ Multi-Purpose Discord Bot
 
 # Note for Linux/Mac
 This was made to run on Windows. May need to change FFmpeg and other stuff to run on Mac/Linux.
+
